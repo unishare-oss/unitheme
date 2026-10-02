@@ -4,6 +4,10 @@ Shared themes for UniCorp apps. Published as `@unishare-oss/unitheme` on GitHub 
 The twelve original UniShare palettes, theme IDs and token names are preserved. Layout,
 fonts, spacing and app-specific preferences are deliberately not standardized here.
 
+**Adding themes to another project?** Follow the
+[step-by-step app integration guide](https://github.com/unishare-oss/unitheme/blob/main/docs/integrating-an-app.md)
+for installation, React/Next.js, Tailwind, CI/Docker access and optional account synchronization.
+
 ## Install
 
 Add to the consuming repo's `.npmrc` (never commit a token):
