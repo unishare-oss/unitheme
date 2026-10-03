@@ -402,8 +402,10 @@ For SSR, use `THEME_COOKIE`, `resolveTheme`, and optionally `serializeThemeCooki
 
 For non-React projects, import `themes.css`, validate the selection with `isThemeId`,
 remove the previous catalogue class, then apply the new class to `html`. If using
-Tailwind dark variants, toggle `.dark` with `isDarkTheme`. Persistence, a custom picker
-and account synchronization are your responsibility; the CSS import alone doesn't add them.
+Tailwind dark variants, toggle `.dark` with `isDarkTheme`. For shared persistence and account synchronization, use `createThemeStore` with
+`createBrowserPersistence` and `connectThemeBrowser` (see the README). Build custom
+controls with `store.select()` and `store.subscribe()`. The CSS import alone does not
+add persistence or synchronization.
 
 ## Acceptance checklist
 

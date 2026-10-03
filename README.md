@@ -42,7 +42,8 @@ function App({ user }: { user?: { id: string } }) {
 
 Create adapters outside rendering so their identity stays stable. Pass only a verified
 non-guest session user. Mount one provider. `useTheme()` exposes `theme`, `setTheme`,
-`status`, `retry` and `synced`. The picker uses ordinary keyboard-accessible buttons,
+`status`, `retry` and `syncEnabled`. The existing `synced` field is a compatibility
+alias for `syncEnabled`; it indicates account sync is enabled, not that a save completed. The picker uses ordinary keyboard-accessible buttons,
 pressed states and live save/error feedback. Its CSS is framework-independent.
 
 CSS-only apps import `themes.css` and apply a catalogue class (e.g. `theme-nord`) on `html`.
@@ -89,6 +90,50 @@ their account. Failed saves remain local with an explicit Retry action.
 Refresh happens on mount, tab focus, visibility changes and every 60 seconds while visible.
 This is eventual synchronization, not a push/realtime channel. Within one app, writes are
 serialized and rapid selections coalesced; across devices the last server write wins.
+
+## Theme store and non-React integration
+
+`createThemeStore` owns theme precedence, account identity, pending selections and sync
+status independently of React. `ThemeProvider` subscribes with `useSyncExternalStore`.
+The existing provider and picker APIs remain compatible.
+
+```ts
+import {
+  createThemeStore, createBrowserPersistence, connectThemeBrowser,
+} from '@unishare-oss/unitheme'
+
+const store = createThemeStore({ persistence: createBrowserPersistence() })
+const disconnect = connectThemeBrowser(store, { persistCookie: true })
+store.select('theme-nord')
+// On session changes: store.setAccount({ id: verifiedUser.id, adapter })
+// On logout: store.setAccount(undefined)
+// On teardown: disconnect()
+```
+
+The browser binding starts the store, applies theme classes/cookies, and owns focus,
+visibility, storage events and polling. Its cleanup removes subscriptions/listeners,
+stops polling and disposes active requests. Mount one binding per document. A disposed
+store can reconnect without resetting the displayed theme or losing pending intent.
+
+Without that binding, call `start()` and `dispose()` yourself. Construction is inert,
+so stores can be created during SSR without touching browser APIs. `getServerSnapshot()`
+preserves the original seed; `getSnapshot()` returns a stable, immutable snapshot with
+`theme`, `status`, `accountId`, `syncEnabled` and `pendingTheme`. `subscribe(listener)`
+returns an unsubscribe function. `refresh()` and `retry()` delegate to account sync.
+Custom persistence implements `read(key)` and `write(key, theme)`; storage failures do
+not prevent an in-memory selection.
+
+Precedence is explicit:
+
+- A valid SSR seed wins on the first start; otherwise use the current identity's local
+  cache, then the default.
+- Switching identities uses the new identity's cache or the default immediately. It
+  cancels old requests and drops the previous identity's pending intent.
+- Account responses replace cached values; a null account preference means the default.
+- A new local selection wins over an older in-flight read. Pending writes survive a
+  lifecycle reconnect in the same store and are retried before fetching account state.
+- Logout restores the guest cache. Changing the SSR seed prop later does not reset a
+  selection. Unsaved intent is in memory and does not survive a full page reload.
 
 ## Development and releases
 

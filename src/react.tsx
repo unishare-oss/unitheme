@@ -1,74 +1,38 @@
 'use client'
 
-import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
-import { DEFAULT_THEME, THEMES, THEME_IDS, isThemeId, isDarkTheme, resolveTheme, serializeThemeCookie, type ThemeAdapter, type ThemeId } from './index.js'
-import { ThemeSync } from './sync.js'
+import { createContext, useContext, useLayoutEffect, useState, useSyncExternalStore, type ReactNode } from 'react'
+import { THEMES, type ThemeId } from './index.js'
+import { createThemeStore, type ThemeAccount, type ThemeStatus } from './store.js'
+import { connectThemeBrowser, createBrowserPersistence } from './browser.js'
 
-type State = 'loading' | 'saving' | 'idle' | 'error'
-const Context = createContext<{ theme: ThemeId; setTheme: (id: ThemeId) => void; status: State; retry: () => void; synced: boolean } | null>(null)
-const storageKey = (id?: string) => id ? `unicorp-theme:user:${id}` : 'theme'
-function stored(key: string, fallback: ThemeId = DEFAULT_THEME) {
-  try { const value = localStorage.getItem(key); return isThemeId(value) ? value : fallback }
-  catch { return fallback }
-}
-function persist(key: string, theme: ThemeId) { try { localStorage.setItem(key, theme) } catch { /* private browsing */ } }
+const Context = createContext<{
+  theme: ThemeId
+  setTheme: (id: ThemeId) => void
+  status: ThemeStatus
+  retry: () => void
+  syncEnabled: boolean
+  /** Compatibility alias for syncEnabled; does not indicate save completion. */
+  synced: boolean
+} | null>(null)
 
-/** Mount once. Account id must come from the app's verified session, never URL input. */
+/** Mount once. Account id must come from the app's verified session. */
 export function ThemeProvider({ children, account, initialTheme, persistCookie = false }: {
   children: ReactNode
-  account?: { id: string; adapter: ThemeAdapter }
+  account?: ThemeAccount
   /** Validated server-rendered theme. A seed, not a controlled prop. */
   initialTheme?: ThemeId
-  /** Mirror the displayed theme to a host-only cookie for the next server render. */
   persistCookie?: boolean
 }) {
-  const [theme, update] = useState<ThemeId>(() => resolveTheme(initialTheme))
-  const [status, setStatus] = useState<State>('idle')
-  const sync = useRef<ThemeSync | null>(null)
-  const previousKey = useRef<string | undefined>(undefined)
-  const key = storageKey(account?.id)
+  const [store] = useState(() => createThemeStore({ initialTheme, account, persistence: createBrowserPersistence() }))
+  const state = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getServerSnapshot)
   useLayoutEffect(() => {
-    // The first client render must preserve the server seed even if localStorage disagrees.
-    // Guard by key so StrictMode effect replay/router refresh can't reset a user's selection.
-    if (previousKey.current === key) return
-    const first = previousKey.current === undefined
-    previousKey.current = key
-    update(current => first && isThemeId(initialTheme) ? initialTheme : stored(key, account ? current : DEFAULT_THEME))
-  }, [key, initialTheme])
-  useLayoutEffect(() => {
-    const root = document.documentElement
-    root.classList.remove(...THEME_IDS)
-    root.classList.add(theme)
-    root.classList.toggle('dark', isDarkTheme(theme))
-    if (persistCookie) {
-      try { document.cookie = serializeThemeCookie(theme, window.location.protocol === 'https:') }
-      catch { /* Cookies may be blocked; local/account theme selection still works. */ }
-    }
-  }, [theme, persistCookie])
-  useEffect(() => {
-    setStatus('idle')
-    const apply = (value: ThemeId | null) => { const next = value ?? DEFAULT_THEME; update(next); persist(key, next) }
-    const controller = account ? new ThemeSync(account.adapter, apply, setStatus) : null
-    sync.current = controller
-    void controller?.refresh()
-    const refresh = () => { if (document.visibilityState === 'visible') void controller?.refresh() }
-    const storage = (event: StorageEvent) => { if (!controller && event.key === key) update(stored(key)); else refresh() }
-    window.addEventListener('focus', refresh)
-    window.addEventListener('storage', storage)
-    document.addEventListener('visibilitychange', refresh)
-    const timer = controller ? window.setInterval(refresh, 60_000) : undefined
-    return () => {
-      controller?.dispose(); sync.current = null
-      window.removeEventListener('focus', refresh); window.removeEventListener('storage', storage)
-      document.removeEventListener('visibilitychange', refresh); window.clearInterval(timer)
-    }
-  }, [key, account?.adapter])
-  function setTheme(id: ThemeId) {
-    if (!isThemeId(id)) return
-    if (sync.current) sync.current.select(id)
-    else { update(id); persist(key, id) }
-  }
-  return <Context.Provider value={{ theme, setTheme, status, retry: () => sync.current?.retry(), synced: !!account }}>{children}</Context.Provider>
+    store.setAccount(account)
+  }, [store, account?.id, account?.adapter])
+  useLayoutEffect(() => connectThemeBrowser(store, { persistCookie }), [store, persistCookie])
+  return <Context.Provider value={{
+    theme: state.theme, status: state.status, setTheme: store.select, retry: store.retry,
+    syncEnabled: state.syncEnabled, synced: state.syncEnabled,
+  }}>{children}</Context.Provider>
 }
 
 export function useTheme() {
