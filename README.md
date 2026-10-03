@@ -18,7 +18,7 @@ Add to the consuming repo's `.npmrc` (never commit a token):
 ```
 
 Use a classic PAT with `read:packages` and access to the private package, or an authorized
-GitHub Actions `GITHUB_TOKEN`. Then install `@unishare-oss/unitheme@0.1.0` using your package manager.
+GitHub Actions `GITHUB_TOKEN`. Then install `@unishare-oss/unitheme@0.2.0` using your package manager.
 CI: grant the consuming repo access under the package's **Manage Actions access** settings,
 or provide a `GH_PACKAGES_TOKEN` secret. Docker: pass that token as a BuildKit secret named
 `npm_token`, never as a build argument or persistent image environment variable.
@@ -50,10 +50,21 @@ All palettes expose the same semantic CSS variables and an appropriate `color-sc
 The React provider additionally sets `.dark` for existing Tailwind dark variants.
 Use `isDarkTheme(id)` instead of maintaining a second list of dark palettes.
 
-Next.js: import `THEME_BOOTSTRAP` from the **core** entry and put a script with its contents
-in the document head; set `suppressHydrationWarning` on `html`. With a strict CSP, supply
-your nonce. This restores the guest/legacy browser preference before paint; account
-preferences are resolved after the app session loads. No preference is used as authorization.
+Next.js: read `THEME_COOKIE` with `await cookies()`, validate it with `isThemeId`, and
+render the resolved theme class (plus `.dark` when appropriate) on `html`. Pass the same
+validated `initialTheme` to the provider with `persistCookie`. No bootstrap script or
+hydration-warning suppression is required. See the integration guide for complete code.
+
+The host-only `unicorp-theme` cookie caches the last displayed theme for one year; it is
+JavaScript-writable, SameSite=Lax, and Secure on HTTPS. It is not an identity/account
+preference and cannot authenticate anyone. An absent/invalid cookie uses the default;
+legacy localStorage preferences migrate on the first client mount. Account preferences
+still resolve asynchronously and update the cookie when they arrive. Cookie-based root
+layouts use request-time rendering: do not publicly cache cookie-personalized HTML.
+
+Browser-only apps can still optionally use `THEME_BOOTSTRAP` before paint. With a strict
+CSP, authorize that script using your nonce/hash. The new provider options are opt-in;
+existing browser-only integrations are unchanged.
 
 ## Account synchronization
 

@@ -1,7 +1,7 @@
 # Add UniTheme to a UniCorp project
 
 Use `@unishare-oss/unitheme` rather than copying theme CSS from UniShare. This guide
-targets **v0.1.0** and React 19+. CSS-only projects can use the palettes without React.
+targets **v0.2.0** and React 19+. CSS-only projects can use the palettes without React.
 
 ## Choose the integration level
 
@@ -34,13 +34,13 @@ Choose **one** installation command, matching the project's package manager:
 
 ```sh
 # pnpm
-NODE_AUTH_TOKEN="$(gh auth token)" pnpm add --save-exact @unishare-oss/unitheme@0.1.0
+NODE_AUTH_TOKEN="$(gh auth token)" pnpm add --save-exact @unishare-oss/unitheme@0.2.0
 
 # Bun
-NODE_AUTH_TOKEN="$(gh auth token)" bun add --exact @unishare-oss/unitheme@0.1.0
+NODE_AUTH_TOKEN="$(gh auth token)" bun add --exact @unishare-oss/unitheme@0.2.0
 
 # npm
-NODE_AUTH_TOKEN="$(gh auth token)" npm install --save-exact @unishare-oss/unitheme@0.1.0
+NODE_AUTH_TOKEN="$(gh auth token)" npm install --save-exact @unishare-oss/unitheme@0.2.0
 ```
 
 Run this in the **consuming app workspace**, not automatically at the monorepo root.
@@ -185,45 +185,67 @@ Without an `account` prop, selections persist in this browser only.
 
 ### Next.js App Router
 
-Put the provider in a client component:
+Server-render the last displayed theme from a validated, host-only cookie. Put the
+provider in a client component and pass it the same initial theme:
 
 ```tsx
 // components/app-theme-provider.tsx
 'use client'
 
 import type { ReactNode } from 'react'
+import type { ThemeId } from '@unishare-oss/unitheme'
 import { ThemeProvider } from '@unishare-oss/unitheme/react'
 
-export function AppThemeProvider({ children }: { children: ReactNode }) {
-  return <ThemeProvider>{children}</ThemeProvider>
+export function AppThemeProvider({ children, initialTheme }: {
+  children: ReactNode
+  initialTheme?: ThemeId
+}) {
+  return <ThemeProvider initialTheme={initialTheme} persistCookie>{children}</ThemeProvider>
 }
 ```
 
-Use it from the root layout. `THEME_BOOTSTRAP` comes from the **core** entry, not the
-client-only React entry:
+Use it from the root layout. Cookie validation and class helpers come from the **core**
+entry, not the client-only React entry:
 
 ```tsx
 // app/layout.tsx
 import type { ReactNode } from 'react'
-import { THEME_BOOTSTRAP } from '@unishare-oss/unitheme'
+import { cookies } from 'next/headers'
+import { THEME_COOKIE, isThemeId, isDarkTheme, resolveTheme } from '@unishare-oss/unitheme'
 import { AppThemeProvider } from '@/components/app-theme-provider'
 import './globals.css' // Includes the shared CSS imports.
 
-export default function RootLayout({ children }: { children: ReactNode }) {
+export default async function RootLayout({ children }: { children: ReactNode }) {
+  const cookieTheme = (await cookies()).get(THEME_COOKIE)?.value
+  const initialTheme = isThemeId(cookieTheme) ? cookieTheme : undefined
+  const theme = resolveTheme(initialTheme)
   return (
-    <html lang="en" suppressHydrationWarning>
-      <head>
-        <script dangerouslySetInnerHTML={{ __html: THEME_BOOTSTRAP }} />
-      </head>
-      <body><AppThemeProvider>{children}</AppThemeProvider></body>
+    <html lang="en" className={`${theme}${isDarkTheme(theme) ? ' dark' : ''}`}>
+      <body><AppThemeProvider initialTheme={initialTheme}>{children}</AppThemeProvider></body>
     </html>
   )
 }
 ```
 
-The bootstrap restores the guest/legacy browser theme before paint. Account themes
-load after the app session resolves. Supply your CSP nonce if inline scripts require it.
+No inline bootstrap, external script, or `suppressHydrationWarning` is needed. The server
+and first client render use the same theme. The provider preserves that initial theme
+even if localStorage disagrees, and updates the cookie whenever the displayed theme changes.
 The package ships compiled JavaScript; no source-package transpilation setting is needed.
+
+The `unicorp-theme` cookie is a **display cache**, not authorization or the canonical
+account preference. It is host-only (no Domain), SameSite=Lax, and Secure on HTTPS.
+It is deliberately JavaScript-writable so a local selection can update it immediately.
+Never trust arbitrary cookie text as an HTML class; always use the catalogue allowlist.
+
+Reading cookies in the root layout opts pages into request-time rendering. Do not
+publicly cache the personalized HTML. On a first visit with no valid cookie, the server
+renders the default; any legacy localStorage choice migrates on the first client mount.
+On a new device or after a change in another app, the latest account theme may still
+arrive asynchronously. This avoids a bootstrap, not the need to fetch account preferences.
+
+`initialTheme` is a seed, not a controlled prop: router refreshes must not reset an active
+selection. For browser-only apps, the old optional `THEME_BOOTSTRAP` remains available;
+authorize it with a CSP nonce/hash when required. They do not need the SSR cookie flow.
 
 ## 4. Optional: synchronize through a UniAuth account
 
@@ -327,7 +349,7 @@ Replace the browser-local wrapper with an account-aware one:
 'use client'
 
 import type { ReactNode } from 'react'
-import { createThemeAdapter } from '@unishare-oss/unitheme'
+import { createThemeAdapter, type ThemeId } from '@unishare-oss/unitheme'
 import { ThemeProvider } from '@unishare-oss/unitheme/react'
 
 // Keep this outside rendering; the adapter's identity must stay stable.
@@ -335,18 +357,21 @@ const adapter = createThemeAdapter('/api/theme')
 
 type SessionUser = { id: string; isAnonymous?: boolean | null }
 
-export function AppThemeProvider({ children, user }: {
+export function AppThemeProvider({ children, user, initialTheme }: {
   children: ReactNode
   user?: SessionUser | null
+  initialTheme?: ThemeId
 }) {
   // Supply `user` from the app's current session, never URL/localStorage input.
   const account = user && !user.isAnonymous ? { id: user.id, adapter } : undefined
-  return <ThemeProvider account={account}>{children}</ThemeProvider>
+  return <ThemeProvider account={account} initialTheme={initialTheme} persistCookie>{children}</ThemeProvider>
 }
 ```
 
 Wire `user` to your existing session hook/context so login/logout/account changes update
 the prop. Backend verification is still mandatory; the frontend prop is not authorization.
+For Next.js, keep passing `initialTheme` from the root layout. For a browser-only app,
+omit `persistCookie` if you do not need a display cookie.
 
 If the app wraps responses as `{ data: { theme }, ... }`, use
 `createThemeAdapter('/api/theme', true)` instead. Other response shapes need a custom
@@ -373,6 +398,7 @@ export function NordButton() {
 
 Core exports include `THEMES`, `THEME_IDS`, `DEFAULT_THEME`, `isThemeId`, `isDarkTheme`
 and the `ThemeId` type. Use those instead of duplicating theme/dark-mode lists.
+For SSR, use `THEME_COOKIE`, `resolveTheme`, and optionally `serializeThemeCookie`.
 
 For non-React projects, import `themes.css`, validate the selection with `isThemeId`,
 remove the previous catalogue class, then apply the new class to `html`. If using
@@ -386,6 +412,7 @@ and account synchronization are your responsibility; the CSS import alone doesn'
 - [ ] No copied palette or dark-theme lists remain; components use semantic colors.
 - [ ] All twelve themes display correctly, including inputs, popovers and third-party widgets.
 - [ ] Keyboard focus and the picker's selected states work; guests restore browser-local choices.
+- [ ] SSR HTML has the correct theme class; hydration preserves it and selection updates the host-only cookie.
 - [ ] Signed-in selection appears in another app/device after focus or the next visible refresh.
 - [ ] Guest/unauthenticated writes are rejected; account switching doesn't upload a prior user's theme.
 - [ ] Network/save failures show Retry and don't claim the account preference was saved.
@@ -401,7 +428,7 @@ and account synchronization are your responsibility; the CSS import alone doesn'
 | Picker works but doesn't sync | An `account` prop and a working same-origin theme endpoint are both required. |
 | Exchange returns 401/403 | Confidential client credentials, valid user token, `profile` scope, approved first-party client, and a non-guest subject. |
 | Local save keeps showing Retry | Failed token refresh, missing UniAuth migration, incorrect endpoint, CSRF Origin rejection, or wrong response envelope. |
-| Early light-theme flash | Add the bootstrap for browser-local themes; account resolution is still asynchronous in v0.1.0. |
+| Wrong SSR theme | Validate the cookie, pass the same `initialTheme` to the provider, and remove any old bootstrap. An absent cookie/new-device account still needs client resolution. |
 
 New palette releases do not automatically change apps that pin a version. Upgrade through
 a focused dependency PR and rerun the acceptance checks. Keep authentication and theme
