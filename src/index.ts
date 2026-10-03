@@ -3,6 +3,8 @@ export { THEMES }
 export type ThemeId = (typeof THEMES)[number]['id']
 export type ThemeOption = (typeof THEMES)[number]
 export const DEFAULT_THEME: ThemeId = 'theme-unishare'
+/** Display preference only: host-only, never an authentication/session cookie. */
+export const THEME_COOKIE = 'unicorp-theme'
 export const THEME_IDS = THEMES.map((t) => t.id)
 export function isThemeId(value: unknown): value is ThemeId {
   return typeof value === 'string' && THEMES.some((t) => t.id === value)
@@ -11,7 +13,17 @@ export function isDarkTheme(value: unknown): boolean {
   return THEMES.some((t) => t.id === value && t.mode === 'dark')
 }
 
-/** Insert in the document head before paint. Only fixed catalogue values are interpolated. */
+export function resolveTheme(value: unknown): ThemeId {
+  return isThemeId(value) ? value : DEFAULT_THEME
+}
+
+/** JavaScript-writable because it caches presentation, not identity. No Domain attribute. */
+export function serializeThemeCookie(theme: ThemeId, secure = false): string {
+  if (!isThemeId(theme)) throw new Error('Invalid theme cookie')
+  return `${THEME_COOKIE}=${theme}; Path=/; Max-Age=31536000; SameSite=Lax${secure ? '; Secure' : ''}`
+}
+
+/** Optional legacy bootstrap for non-SSR apps. SSR apps use initialTheme and persistCookie. */
 export const THEME_BOOTSTRAP = `try{var t=localStorage.getItem('theme');var ids=${JSON.stringify(THEME_IDS)};if(!ids.includes(t))t='${DEFAULT_THEME}';var r=document.documentElement;r.classList.remove(...ids);r.classList.add(t);r.classList.toggle('dark',${JSON.stringify(THEMES.filter(t => t.mode === 'dark').map(t => t.id))}.includes(t))}catch{}`
 
 export interface ThemeAdapter {

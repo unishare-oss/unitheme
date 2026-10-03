@@ -5,5 +5,5 @@
     "outDir": "dist", "rootDir": "src", "skipLibCheck": true
   },
   "include": ["src"],
-  "exclude": ["src/**/*.test.ts"]
+  "exclude": ["src/**/*.test.ts", "src/**/*.test.tsx"]
 }

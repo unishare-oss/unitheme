@@ -1,6 +1,6 @@
 {
   "name": "@unishare-oss/unitheme",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "license": "UNLICENSED",
   "type": "module",
   "description": "Shared UniCorp theme palettes, React provider, picker and account preference adapters",
@@ -20,5 +20,5 @@
   },
   "peerDependencies": { "react": ">=19", "react-dom": ">=19" },
   "peerDependenciesMeta": { "react": { "optional": true }, "react-dom": { "optional": true } },
-  "devDependencies": { "@types/bun": "^1.4.2", "@types/react": "^19.2.17", "react": "^19.2.5", "react-dom": "^19.2.5", "typescript": "^5.9.3" }
+  "devDependencies": { "@types/bun": "^1.4.2", "@types/react": "^19.2.17", "@types/react-dom": "^19.2.3", "react": "^19.2.5", "react-dom": "^19.2.5", "typescript": "^5.9.3" }
 }

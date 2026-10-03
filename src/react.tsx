@@ -1,31 +1,50 @@
 'use client'
 
 import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
-import { DEFAULT_THEME, THEMES, THEME_IDS, isThemeId, isDarkTheme, type ThemeAdapter, type ThemeId } from './index.js'
+import { DEFAULT_THEME, THEMES, THEME_IDS, isThemeId, isDarkTheme, resolveTheme, serializeThemeCookie, type ThemeAdapter, type ThemeId } from './index.js'
 import { ThemeSync } from './sync.js'
 
 type State = 'loading' | 'saving' | 'idle' | 'error'
 const Context = createContext<{ theme: ThemeId; setTheme: (id: ThemeId) => void; status: State; retry: () => void; synced: boolean } | null>(null)
 const storageKey = (id?: string) => id ? `unicorp-theme:user:${id}` : 'theme'
-function stored(key: string) {
-  try { const value = localStorage.getItem(key); return isThemeId(value) ? value : DEFAULT_THEME }
-  catch { return DEFAULT_THEME }
+function stored(key: string, fallback: ThemeId = DEFAULT_THEME) {
+  try { const value = localStorage.getItem(key); return isThemeId(value) ? value : fallback }
+  catch { return fallback }
 }
 function persist(key: string, theme: ThemeId) { try { localStorage.setItem(key, theme) } catch { /* private browsing */ } }
 
 /** Mount once. Account id must come from the app's verified session, never URL input. */
-export function ThemeProvider({ children, account }: { children: ReactNode; account?: { id: string; adapter: ThemeAdapter } }) {
-  const [theme, update] = useState<ThemeId>(DEFAULT_THEME)
+export function ThemeProvider({ children, account, initialTheme, persistCookie = false }: {
+  children: ReactNode
+  account?: { id: string; adapter: ThemeAdapter }
+  /** Validated server-rendered theme. A seed, not a controlled prop. */
+  initialTheme?: ThemeId
+  /** Mirror the displayed theme to a host-only cookie for the next server render. */
+  persistCookie?: boolean
+}) {
+  const [theme, update] = useState<ThemeId>(() => resolveTheme(initialTheme))
   const [status, setStatus] = useState<State>('idle')
   const sync = useRef<ThemeSync | null>(null)
+  const previousKey = useRef<string | undefined>(undefined)
   const key = storageKey(account?.id)
-  useLayoutEffect(() => { update(stored(key)) }, [key])
+  useLayoutEffect(() => {
+    // The first client render must preserve the server seed even if localStorage disagrees.
+    // Guard by key so StrictMode effect replay/router refresh can't reset a user's selection.
+    if (previousKey.current === key) return
+    const first = previousKey.current === undefined
+    previousKey.current = key
+    update(current => first && isThemeId(initialTheme) ? initialTheme : stored(key, account ? current : DEFAULT_THEME))
+  }, [key, initialTheme])
   useLayoutEffect(() => {
     const root = document.documentElement
     root.classList.remove(...THEME_IDS)
     root.classList.add(theme)
     root.classList.toggle('dark', isDarkTheme(theme))
-  }, [theme])
+    if (persistCookie) {
+      try { document.cookie = serializeThemeCookie(theme, window.location.protocol === 'https:') }
+      catch { /* Cookies may be blocked; local/account theme selection still works. */ }
+    }
+  }, [theme, persistCookie])
   useEffect(() => {
     setStatus('idle')
     const apply = (value: ThemeId | null) => { const next = value ?? DEFAULT_THEME; update(next); persist(key, next) }
