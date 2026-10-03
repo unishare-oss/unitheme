@@ -138,7 +138,9 @@ Precedence is explicit:
 ## Development and releases
 
 `palettes.json` is the only palette source of truth. `bun run build` generates metadata,
-CSS, ESM/CJS core exports and React declarations. `bun test` exercises catalogue integrity
+CSS, ESM/CJS core exports and React declarations. Generation validates palette IDs,
+modes, labels and token completeness before writing outputs. The default palette is
+explicit and does not depend on catalogue order. `bun test` exercises catalogue integrity
 and the account-sync state machine. The importer is historical; don't run it again over
 edits made here.
 
